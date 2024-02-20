@@ -122,6 +122,71 @@ func (f *FileIoHandler) DownloadFile(rawPath string) (fileHandler *file_download
 	return nil, fmt.Errorf("could not download file")
 }
 
+func (f *FileIoHandler) DownloadRawFile(rawPath string) (bytes []byte, err error) {
+	res, err := utils.GetFileTreeData(rawPath, f.walletHandler.GetAddress(), f.walletHandler)
+	if err != nil {
+		return nil, err
+	}
+
+	vacc := res.Files.ViewingAccess
+
+	var perms compression.EditorsViewers
+	err = json.Unmarshal([]byte(vacc), &perms)
+	if err != nil {
+		return nil, err
+	}
+
+	contents := res.Files.Contents
+
+	var fids Fids
+	err = json.Unmarshal([]byte(contents), &fids)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(fids.Fids) == 0 {
+		return nil, fmt.Errorf("not enough fids in the file")
+	}
+
+	fid := fids.Fids[0]
+
+	queryClient := storagetypes.NewQueryClient(f.walletHandler.GetClientCtx())
+
+	req := storagetypes.QueryFindFileRequest{
+		Fid: fid,
+	}
+
+	urlRes, err := queryClient.FindFile(context.Background(), &req)
+	if err != nil {
+		return nil, err
+	}
+
+	var ips []string
+
+	err = json.Unmarshal([]byte(urlRes.ProviderIps), &ips)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, ip := range ips {
+		providerUrl, err := url2.Parse(ip)
+		if err != nil {
+			fmt.Println(err)
+			continue
+		}
+
+		bytes, err := doDownload(providerUrl, fid)
+		if err != nil {
+			fmt.Println(err)
+			continue
+		}
+
+		return bytes, nil
+	}
+
+	return nil, fmt.Errorf("could not download file")
+}
+
 func (f *FileIoHandler) DownloadFileFromFid(fid string) (fileHandler *file_download_handler.FileDownloadHandler, err error) {
 	queryClient := storagetypes.NewQueryClient(f.walletHandler.GetClientCtx())
 
